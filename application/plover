@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 
+import os.path
 import sys
+
+# look for local lib too
+plover_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../")
+sys.path.insert(0, plover_dir)
 
 import plover.gui.main
 import plover.oslayer.processlock
