@@ -11,11 +11,7 @@ STOP_SPACE = ' '
 NO_SPACE = ''
 META_STOPS = ('.', '!', '?')
 META_COMMAS = (',', ':', ';')
-META_ED_SUFFIX = '^ed'
-META_ER_SUFFIX = '^er'
-META_ING_SUFFIX = '^ing'
 META_CAPITALIZE = '-|'
-META_PLURALIZE = '^s'
 META_GLUE_FLAG = '&'
 META_ATTACH_FLAG = '^'
 META_KEY_COMBINATION = '#'
@@ -163,7 +159,7 @@ class Formatter:
 
         # Keep track of the current state in preparation for the next
         # call to this method.
-        self.keystrokes, self.key_combos = self._translations_to_string( \
+        self.keystrokes, self.key_combos = self._translations_to_string(
                                                   self.translator.translations)
 
     def _translations_to_string(self, translations):
@@ -214,24 +210,8 @@ class Formatter:
                     english = meta
                     space = NO_SPACE  # Correct for most meta commands.
                     old_text = ''
-                    if meta == META_ED_SUFFIX:
-                        if text:
-                            old_text = text.pop()
-                            english = orthography.add_ed_suffix(old_text)
-                    elif meta == META_ER_SUFFIX:
-                        if text:
-                            old_text = text.pop()
-                            english = orthography.add_er_suffix(old_text)
-                    elif meta == META_ING_SUFFIX:
-                        if text:
-                            old_text = text.pop()
-                            english = orthography.add_ing_suffix(old_text)
-                    elif meta in META_COMMAS or meta in META_STOPS:
+                    if meta in META_COMMAS or meta in META_STOPS:
                         pass  # Space is already deleted.
-                    elif meta == META_PLURALIZE:
-                        if text:
-                            old_text = text.pop()
-                            english = orthography.pluralize_with_s(old_text)
                     elif meta.startswith(META_GLUE_FLAG):
                         english = meta[1:]
                         previous_meta = self._get_meta(previous_atom)
@@ -242,6 +222,9 @@ class Formatter:
                         english = meta[1:]
                         if english.endswith(META_ATTACH_FLAG):
                             english = english[:-1]
+                        if text:
+                            old_text = text.pop()
+                            english = orthography.add_suffix(old_text, english);
                     elif meta.endswith(META_ATTACH_FLAG):
                         space = SPACE
                         english = meta[:-1]
