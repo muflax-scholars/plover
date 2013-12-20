@@ -85,7 +85,7 @@ class Stenotype(StenotypeBase):
     def _key_down(self, event):
         """Called when a key is pressed."""
         if (self._is_keyboard_suppressed
-            and event.keystring is not None
+            and event.keycode is not None
             and not self._keyboard_capture.is_keyboard_suppressed()):
             self._keyboard_emulation.send_backspaces(1)
         self._down_keys.add(event.keycode)
@@ -104,7 +104,7 @@ class Stenotype(StenotypeBase):
     def _key_up(self, event):
         """Called when a key is released."""
         # Process the newly released key.
-        self._released_keys.add(event.keystring)
+        self._released_keys.add(event.keycode)
         # Remove invalid released keys.
         self._released_keys = self._released_keys.intersection(self._down_keys)
 
