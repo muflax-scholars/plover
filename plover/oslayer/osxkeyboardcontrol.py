@@ -1,12 +1,46 @@
-from Quartz import *
+from Quartz import (
+    CFMachPortCreateRunLoopSource,
+    CFRunLoopAddSource,
+    CFRunLoopGetCurrent,
+    CFRunLoopRun,
+    CFRunLoopStop,
+    CGEventCreateKeyboardEvent,
+    CGEventGetFlags,
+    CGEventGetIntegerValueField,
+    CGEventMaskBit,
+    CGEventPost,
+    CGEventSetFlags,
+    CGEventSourceCreate,
+    CGEventSourceGetSourceStateID,
+    CGEventTapCreate,
+    CGEventTapEnable,
+    kCFRunLoopCommonModes,
+    kCGEventFlagMaskAlternate,
+    kCGEventFlagMaskCommand,
+    kCGEventFlagMaskControl,
+    kCGEventFlagMaskNonCoalesced,
+    kCGEventFlagMaskShift,
+    kCGEventKeyDown,
+    kCGEventKeyUp,
+    kCGEventSourceStateID,
+    kCGEventTapOptionDefault,
+    kCGHeadInsertEventTap,
+    kCGKeyboardEventKeycode,
+    kCGSessionEventTap,
+)
 import threading
 import collections
+import ctypes
+import ctypes.util
+import objc
+import sys
+
 
 # This mapping only works on keyboards using the ANSI standard layout. Each
 # entry represents a sequence of keystrokes that are needed to achieve the
 # given symbol. First, all keydown events are sent, in order, and then all
 # keyup events are send in reverse order.
-KEYCODES = collections.defaultdict(list, {
+KEYNAME_TO_KEYCODE = collections.defaultdict(list, {
     # The order follows that of the plover guide.
     # Keycodes from http://forums.macrumors.com/showthread.php?t=780577
     '0': [29], '1': [18], '2': [19], '3': [20], '4': [21], '5': [23],
@@ -175,15 +209,14 @@ MODIFIER_KEYS_TO_MASKS = {
 MY_EVENT_SOURCE = CGEventSourceCreate(0xFFFFFFFF)  # 32 bit -1
 MY_EVENT_SOURCE_ID = CGEventSourceGetSourceStateID(MY_EVENT_SOURCE)
 
-# For the purposes of this class, we'll only report key presses that
-# result in these outputs in order to exclude special key combos.
-WATCHED_KEYS = set(
-    ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
-     'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\', 'a',
-     's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
-     'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-     ' '])
-
+# For the purposes of this class, we're only watching these keys.
+KEYCODE_TO_CHAR = {
+    50: '`', 29: '0', 18: '1', 19: '2', 20: '3', 21: '4', 23: '5', 22: '6', 26: '7', 28: '8', 25: '9', 27: '-', 24: '=',
+    12: 'q', 13: 'w', 14: 'e', 15: 'r', 17: 't', 16: 'y', 32: 'u', 34: 'i', 31: 'o',  35: 'p', 33: '[', 30: ']', 42: '\\',
+    0: 'a', 1: 's', 2: 'd', 3: 'f', 5: 'g', 4: 'h', 38: 'j', 40: 'k', 37: 'l', 41: ';', 39: '\'',
+    6: 'z', 7: 'x', 8: 'c', 9: 'v', 11: 'b', 45: 'n', 46: 'm', 43: ',', 47: '.', 44: '/',
+    49: ' ',
+}
 
 class KeyboardCapture(threading.Thread):
     """Implementation of KeyboardCapture for OSX."""
@@ -195,6 +228,8 @@ class KeyboardCapture(threading.Thread):
         self._running_thread = None
         self.suppress_keyboard(True)
 
+        # Returning the event means that it is passed on for further processing by others. 
+        # Returning None means that the event is intercepted.
         def callback(proxy, event_type, event, reference):
             # Don't pass on meta events meant for this event tap.
             if event_type not in self._KEYBOARD_EVENTS:
@@ -203,21 +238,17 @@ class KeyboardCapture(threading.Thread):
             if (CGEventGetIntegerValueField(event, kCGEventSourceStateID) ==
                 MY_EVENT_SOURCE_ID):
                 return event
-            result = CGEventKeyboardGetUnicodeString(event, 1, None, None)
             # Don't intercept the event if it has modifiers.
             if CGEventGetFlags(event) & ~kCGEventFlagMaskNonCoalesced:
                 return event
-            if len(result[1]) > 0:
-                # Doesn't work for non-ascii keyboard mappings.
-                # TODO: Check that we are in an incompatible mapping and notify
-                # the user/engine.
-                char = chr(result[1][0])
-                if char in WATCHED_KEYS:
-                    s = 'key_up' if event_type == kCGEventKeyUp else 'key_down'
-                    getattr(self, s, lambda x: True)(KeyboardEvent(char))
-                    return None if self.is_keyboard_suppressed() else event
-            # If any conditions fail then just pass along the event.
-            return event
+            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            if keycode not in KEYCODE_TO_CHAR:
+                return event
+            char = KEYCODE_TO_CHAR[keycode]
+            handler_name = 'key_up' if event_type == kCGEventKeyUp else 'key_down'
+            handler = getattr(self, handler_name, lambda event: None)
+            handler(KeyboardEvent(char))
+            return None if self.is_keyboard_suppressed() else event
 
         self._tap = CGEventTapCreate(
             kCGSessionEventTap,
@@ -253,6 +284,26 @@ class KeyboardCapture(threading.Thread):
         return self._suppress_keyboard
 
 
+# "Narrow python" unicode objects store chracters in UTF-16 so we 
+# can't iterate over characters in the standard way. This workaround 
+# let's us iterate over full characters in the string.
+def characters(s):
+    encoded = s.encode('utf-32-be')
+    characters = []
+    for i in xrange(len(encoded)/4):
+        start = i * 4
+        end = start + 4
+        character = encoded[start:end].decode('utf-32-be')
+        yield character
+
+CGEventKeyboardSetUnicodeString = ctypes.cdll.LoadLibrary(ctypes.util.find_library('ApplicationServices')).CGEventKeyboardSetUnicodeString
+CGEventKeyboardSetUnicodeString.restype = None
+native_utf16 = 'utf-16-le' if sys.byteorder == 'little' else 'utf-16-be'
+
+def set_string(event, s):
+    buf = s.encode(native_utf16)
+    CGEventKeyboardSetUnicodeString(objc.pyobjc_id(event), len(buf) / 2, buf)
+
 class KeyboardEmulation(object):
 
     def __init__(self):
@@ -266,8 +317,13 @@ class KeyboardEmulation(object):
                 CGEventCreateKeyboardEvent(MY_EVENT_SOURCE, 51, False))
 
     def send_string(self, s):
-        for c in s:
-            self._send_sequence(down_up(KEYCODES[LITERALS[c]]))
+        for c in characters(s):
+            event = CGEventCreateKeyboardEvent(MY_EVENT_SOURCE, 0, True)
+            set_string(event, c)
+            CGEventPost(kCGSessionEventTap, event)
+            event = CGEventCreateKeyboardEvent(MY_EVENT_SOURCE, 0, False)
+            set_string(event, c)
+            CGEventPost(kCGSessionEventTap, event)
 
     def send_key_combination(self, combo_string):
         """Emulate a sequence of key combinations.
@@ -298,7 +354,7 @@ class KeyboardEmulation(object):
             if c in (' ', '(', ')'):
                 keystring = ''.join(current_command)
                 current_command = []
-                seq = KEYCODES[keystring]
+                seq = KEYNAME_TO_KEYCODE[keystring]
                 if c == ' ':
                     # Record press and release for command's keys.
                     keycode_events.extend(down_up(seq))
@@ -316,7 +372,7 @@ class KeyboardEmulation(object):
                 current_command.append(c)
         # Record final command key.
         keystring = ''.join(current_command)
-        seq = KEYCODES[keystring]
+        seq = KEYNAME_TO_KEYCODE[keystring]
         keycode_events.extend(down_up(seq))
         # Release all keys.
         # Should this be legal in the dict (lack of closing parens)?

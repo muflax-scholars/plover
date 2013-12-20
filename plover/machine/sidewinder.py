@@ -1,7 +1,12 @@
 # Copyright (c) 2010 Joshua Harlan Lifton.
 # See LICENSE.txt for details.
 
+# TODO: add options to remap keys
+# TODO: look into programmatically pasting into other applications
+
 "For use with a Microsoft Sidewinder X4 keyboard used as stenotype machine."
+
+# TODO: Change name to NKRO Keyboard.
 
 from plover.machine.base import StenotypeBase
 from plover.oslayer import keyboardcontrol
@@ -56,7 +61,7 @@ class Stenotype(StenotypeBase):
 
     """
 
-    def __init__(self):
+    def __init__(self, params):
         """Monitor a Microsoft Sidewinder X4 keyboard via X events."""
         StenotypeBase.__init__(self)
         self._keyboard_emulation = keyboardcontrol.KeyboardEmulation()
@@ -66,37 +71,67 @@ class Stenotype(StenotypeBase):
         self.suppress_keyboard(True)
         self._down_keys = set()
         self._released_keys = set()
+        self.arpeggiate = params['arpeggiate']
 
     def start_capture(self):
         """Begin listening for output from the stenotype machine."""
         self._keyboard_capture.start()
+        self._ready()
 
     def stop_capture(self):
         """Stop listening for output from the stenotype machine."""
         self._keyboard_capture.cancel()
+        self._stopped()
 
     def suppress_keyboard(self, suppress):
         self._is_keyboard_suppressed = suppress
         self._keyboard_capture.suppress_keyboard(suppress)
 
     def _key_down(self, event):
-        # Called when a key is pressed.
+        """Called when a key is pressed."""
         if (self._is_keyboard_suppressed
             and event.keystring is not None
             and not self._keyboard_capture.is_keyboard_suppressed()):
             self._keyboard_emulation.send_backspaces(1)
-        self._down_keys.add(event.keystring)
+        if event.keystring in KEYSTRING_TO_STENO_KEY:
+            self._down_keys.add(event.keystring)
+
+    def _post_suppress(self, suppress, steno_keys):
+        """Backspace the last stroke since it matched a command.
+        
+        The suppress function is passed in to prevent threading issues with the 
+        gui.
+        """
+        n = len(steno_keys)
+        if self.arpeggiate:
+            n += 1
+        suppress(n)
 
     def _key_up(self, event):
-        # Called when a key is released.
-        # Remove invalid released keys.
-        self._released_keys = self._released_keys.intersection(self._down_keys)
-        # Process the newly released key.
-        self._released_keys.add(event.keystring)
+        """Called when a key is released."""
+        if event.keystring in KEYSTRING_TO_STENO_KEY:            
+            # Process the newly released key.
+            self._released_keys.add(event.keystring)
+            # Remove invalid released keys.
+            self._released_keys = self._released_keys.intersection(self._down_keys)
+
         # A stroke is complete if all pressed keys have been released.
-        if self._down_keys == self._released_keys:
+        # If we are in arpeggiate mode then only send stroke when spacebar is pressed.
+        send_strokes = bool(self._down_keys and 
+                            self._down_keys == self._released_keys)
+        if self.arpeggiate:
+            send_strokes &= event.keystring == ' '
+        if send_strokes:
             steno_keys = [KEYSTRING_TO_STENO_KEY[k] for k in self._down_keys
                           if k in KEYSTRING_TO_STENO_KEY]
-            self._down_keys.clear()
-            self._released_keys.clear()
-            self._notify(steno_keys)
+            if steno_keys:
+                self._down_keys.clear()
+                self._released_keys.clear()
+                self._notify(steno_keys)
+
+    @staticmethod
+    def get_option_info():
+        bool_converter = lambda s: s == 'True'
+        return {
+            'arpeggiate': (False, bool_converter),
+        }

@@ -13,6 +13,8 @@ Supported stenotype protocols:
  * Gemini PR (a.k.a. Gemini Enhanced)
  * TX Bolt (a.k.a. Gemini TX)
  * Stentura
+ * Treal
+ * Passport
 
 Contact the authors if you would like Plover to support your stenotype
 machine.
@@ -32,25 +34,12 @@ result from typing.
 Installation
 ------------
 
-These installation notes are for Debian-like Linux systems. From the
-directory in which this README file is located, run the following
-commands::
+Plover is available for Windows, OS X and Linux here: http://openstenoproject.github.io/plover/
 
-    sudo apt-get install python-xlib python-serial python-wxgtk2.8 appdirs
-    sudo python setup.py install
+Community Resources
+-------------------
 
-
-Running Plover
---------------
-
-After installation is complete as above, the Plover application will
-be available from the command-line and as an icon in the application
-list. Starting the application will bring up a small window with a red
-'P' icon. At this point, Plover is inactive. To activate Plover, click
-the red 'P' icon, or type on the steno machine the strokes
-corresponding to the PLOVER:TOGGLE or PLOVER:RESUME commands as
-defined in the dictionary. The icon will turn green to indicate that
-Plover is active and ready to translate stenography keystrokes into
-English text. Clicking the green icon or sending the PLOVER:SUSPEND or
-PLOVER:TOGGLE commands will cause the icon to turn red, which means
-Plover is again in the inactive state.
+* `Wiki <http://stenoknight.com/wiki/Main_Page>`_
+* `Forum <http://stenoknight.com/plover/aviary/phpBB3/>`_
+* `Blog <http://plover.stenoknight.com/>`_
+* `Mailing list <https://groups.google.com/forum/#!forum/ploversteno>`_

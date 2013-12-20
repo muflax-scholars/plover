@@ -3,7 +3,19 @@
 
 """Functions that implement some English orthographic rules."""
 
+import os.path
 import re
+from plover.config import ASSETS_DIR
+
+word_list_file_name = os.path.join(ASSETS_DIR, 'american_english_words.txt')
+WORDS = dict()
+try:
+    with open(word_list_file_name) as f:
+        pairs = [word.strip().rsplit(' ', 1) for word in f]
+        pairs.sort(reverse=True, key=lambda x: int(x[1]))
+        WORDS = {p[0].lower(): int(p[1]) for p in pairs}
+except IOError as e:
+    print e
 
 RULES = [
     # == +ly ==
@@ -34,15 +46,61 @@ RULES = [
         r'\1i\2'),
 
     # == e ==
+    # write + en = written
+    (re.compile(r'^(.+)([t])e \^ en$', re.I), r'\1\2\2en'),
+
+
     # narrate + ing = narrating (silent e)
     (re.compile(r'^(.+[bcdfghjklmnpqrstuvwxz])e \^ ([aeiouy].*)$', re.I),
         r'\1\2'),
-    
+
     # == misc ==
     # defer + ed = deferred (consonant doubling)   XXX monitor(stress not on last syllable)
-    (re.compile(r'^(.*[bcdfghjklmnpqrstvwxyz][aeiou])([bcdfgklmnprtvz]) \^ ([aeiouy].*)$', re.I),
+    (re.compile(r'^(.*(?:[bcdfghjklmnprstvwxyz]|qu)[aeiou])([bcdfgklmnprtvz]) \^ ([aeiouy].*)$', re.I),
         r'\1\2\2\3'),
 ]
+
+
+def make_candidates_from_rules(word, suffix, check=lambda x: True):
+    candidates = []
+    for r in RULES:
+        m = r[0].match(word + " ^ " + suffix)
+        if m:   
+            expanded = m.expand(r[1])
+            if check(expanded):
+                candidates.append(expanded)
+    return candidates
+
+def _add_suffix(word, suffix):
+    in_dict_f = lambda x: x in WORDS
+
+    candidates = []
+    
+    # Try 'ible' and see if it's in the dictionary.
+    if suffix == 'able':
+        candidates.extend(make_candidates_from_rules(word, 'ible', in_dict_f))
+    
+    # Try a simple join if it is in the dictionary.
+    simple = word + suffix
+    if in_dict_f(simple):
+        candidates.append(simple)
+    
+    # Try rules with dict lookup.
+    candidates.extend(make_candidates_from_rules(word, suffix, in_dict_f))
+
+    # For all candidates sort by prominence in dictionary and, since sort is
+    # stable, also by the order added to candidates list.
+    if candidates:
+        candidates.sort(key=lambda x: WORDS[x])
+        return candidates[0]
+    
+    # Try rules without dict lookup.
+    candidates = make_candidates_from_rules(word, suffix)
+    if candidates:
+        return candidates[0]
+    
+    # If all else fails then just do a simple join.
+    return simple
 
 def add_suffix(word, suffix):
     """Add a suffix to a word by applying the rules above
@@ -54,81 +112,5 @@ def add_suffix(word, suffix):
     
     """
     suffix, sep, rest = suffix.partition(' ')
-    for r in RULES:
-        m = r[0].match(word + " ^ " + suffix)
-        if m:   
-            expanded = m.expand(r[1])
-            return expanded + sep + rest
-    return word + suffix + sep + rest
-
-def _tests():
-    # c+ly->cally
-    assert add_suffix('artistic', 'ly') == 'artistically'
-    
-    # sibilant+s->es
-    assert add_suffix('establish', 's') == 'establishes'
-    assert add_suffix('speech', 's') == 'speeches'
-    assert add_suffix('approach', 's') == 'approaches'
-    assert add_suffix('beach', 's') == 'beaches'
-    assert add_suffix('arch', 's') == 'arches'
-    assert add_suffix('larch', 's') == 'larches'
-    assert add_suffix('march', 's') == 'marches'
-    assert add_suffix('search', 's') == 'searches'
-    assert add_suffix('starch', 's') == 'starches'
-    # hard ch+s->s
-    assert add_suffix('stomach', 's') == 'stomachs'
-    assert add_suffix('monarch', 's') == 'monarchs'
-    assert add_suffix('patriarch', 's') == 'patriarchs'
-    assert add_suffix('oligarch', 's') == 'oligarchs'
-   
-    # y+s->ies
-    assert add_suffix('cherry', 's') == 'cherries'
-    assert add_suffix('day', 's') == 'days'
-   
-    # y+ist->ist
-    assert add_suffix('pharmacy', 'ist') == 'pharmacist'
-    assert add_suffix('melody', 'ist') == 'melodist'
-    assert add_suffix('pacify', 'ist') == 'pacifist'
-    assert add_suffix('geology', 'ist') == 'geologist'
-    assert add_suffix('metallurgy', 'ist') == 'metallurgist'
-    assert add_suffix('anarchy', 'ist') == 'anarchist'
-    assert add_suffix('monopoly', 'ist') == 'monopolist'
-    assert add_suffix('alchemy', 'ist') == 'alchemist'
-    assert add_suffix('botany', 'ist') == 'botanist'
-    assert add_suffix('therapy', 'ist') == 'therapist'
-    assert add_suffix('theory', 'ist') == 'theorist'
-    assert add_suffix('psychiatry', 'ist') == 'psychiatrist'
-    # y+ist->i exceptions
-    assert add_suffix('lobby', 'ist') == 'lobbyist'
-    assert add_suffix('hobby', 'ist') == 'hobbyist'
-    assert add_suffix('copy', 'ist') != 'copyist'  # TODO
-    
-    # y+!i->i
-    assert add_suffix('beauty', 'ful') == 'beautiful'
-    assert add_suffix('weary', 'ness') == 'weariness'
-    assert add_suffix('weary', 'some') == 'wearisome'
-    
-    # e+vowel->vowel
-    assert add_suffix('narrate', 'ing') == 'narrating'
-    assert add_suffix('narrate', 'or') == 'narrator'
-    
-    # consonant doubling
-    assert add_suffix('defer', 'ed') == 'deferred'
-    assert add_suffix('defer', 'er') == 'deferrer'
-    assert add_suffix('defer', 'ing') == 'deferring'
-    assert add_suffix('pigment', 'ed') == 'pigmented'
-    assert add_suffix('refer', 'ed') == 'referred'
-    assert add_suffix('fix', 'ed') == 'fixed'
-    assert add_suffix('alter', 'ed') != 'altered'  # TODO
-    assert add_suffix('interpret', 'ing') != 'interpreting'  # TODO
-    assert add_suffix('wonder', 'ing') != 'wondering'  # TODO
-    assert add_suffix('target', 'ing') != 'targeting'  # TODO
-    assert add_suffix('limit', 'er') != 'limiter'  # TODO
-    assert add_suffix('maneuver', 'ing') != 'maneuvering'  # TODO
-    assert add_suffix('monitor', 'ing') != 'monitoring'  # TODO
-    assert add_suffix('color', 'ing') != 'coloring'  # TODO
-    assert add_suffix('inhibit', 'ing') != 'inhibiting'  # TODO
-    assert add_suffix('master', 'ed') != 'mastered'  # TODO
-
-if __name__ == '__main__':
-    _tests()
+    expanded = _add_suffix(word, suffix)
+    return expanded + sep + rest
