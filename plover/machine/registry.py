@@ -8,6 +8,7 @@ from plover.machine.txbolt import Stenotype as txbolt
 from plover.machine.sidewinder import Stenotype as sidewinder
 from plover.machine.stentura import Stenotype as stentura
 from plover.machine.passport import Stenotype as passport
+from plover.machine.shifted_sidewinder import Stenotype as shifted_sidewinder
 
 try:
     from plover.machine.treal import Stenotype as treal
@@ -40,7 +41,7 @@ class Registry(object):
 
     def get_all_names(self):
         return self._machines.keys()
-        
+
     def resolve_alias(self, name):
         try:
             return self._aliases[name]
@@ -49,6 +50,7 @@ class Registry(object):
 
 machine_registry = Registry()
 machine_registry.register('NKRO Keyboard', sidewinder)
+machine_registry.register('Shifted Sidewinder', shifted_sidewinder)
 machine_registry.register('Gemini PR', geminipr)
 machine_registry.register('TX Bolt', txbolt)
 machine_registry.register('Stentura', stentura)
