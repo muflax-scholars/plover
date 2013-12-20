@@ -35,6 +35,45 @@ but could not be found."
 
 keyboard_capture_instances = []
 
+# unchanged:
+KEYCODE_TO_PSEUDOKEY = {38: ord("a"),
+                        24: ord("q"),
+                        25: ord("w"),
+                        39: ord("s"),
+                        26: ord("e"),
+                        40: ord("d"),
+                        27: ord("r"),
+                        41: ord("f"),
+                        54: ord("c"),
+                        55: ord("v"),
+                        28: ord("t"),
+                        42: ord("g"),
+                        29: ord("y"),
+                        43: ord("h"),
+                        57: ord("n"),
+                        58: ord("m"),
+                        30: ord("u"),
+                        44: ord("j"),
+                        31: ord("i"),
+                        45: ord("k"),
+                        32: ord("o"),
+                        46: ord("l"),
+                        33: ord("p"),
+                        47: ord(";"),
+                        34: ord("["),
+                        48: ord("'"),
+                        10: ord("1"),
+                        11: ord("2"),
+                        12: ord("3"),
+                        13: ord("4"),
+                        14: ord("5"),
+                        15: ord("6"),
+                        16: ord("7"),
+                        17: ord("8"),
+                        18: ord("9"),
+                        19: ord("0"),
+                        20: ord("-"),
+                        21: ord("=")}
 
 class KeyboardCapture(threading.Thread):
     """Listen to keyboard press and release events."""
@@ -106,8 +145,7 @@ class KeyboardCapture(threading.Thread):
     def process_events(self, reply):
         """Handle keyboard events.
 
-        This usually means passing them off to other callback methods.
-
+        This usually means passing them off to other callback methods. 
         """
         if reply.category != record.FromServer:
             return
@@ -122,7 +160,7 @@ class KeyboardCapture(threading.Thread):
             event, data = rq.EventField(None).parse_binary_value(data,
                                        self.record_display.display, None, None)
             keycode = event.detail
-            modifiers = event.state
+            modifiers = event.state & ~0b10000 & 0xFF
             # ignore modifier because xlib wtfbbq
             keysym = self.local_display.keycode_to_keysym(keycode, 0)
             key_event = XKeyEvent(keycode, modifiers, keysym)
@@ -160,7 +198,7 @@ class KeyboardCapture(threading.Thread):
         self.key_events_to_ignore += key_events
 
 
-class KeyboardEmulation:
+class KeyboardEmulation(object):
     """Emulate keyboard events."""
 
     def __init__(self):
@@ -171,6 +209,7 @@ class KeyboardEmulation:
         backspace_keysym = XK.string_to_keysym('BackSpace')
         self.backspace_keycode, mods = self._keysym_to_keycode_and_modifiers(
                                                 backspace_keysym)
+        self.time = 0
 
     def send_backspaces(self, number_of_backspaces):
         """Emulate the given number of backspaces.
@@ -200,7 +239,7 @@ class KeyboardEmulation:
             keycode, modifiers = self._keysym_to_keycode_and_modifiers(keysym)
             if keycode is not None:
                 self._send_keycode(keycode, modifiers)
-        self.display.sync()
+                self.display.sync()
 
     def send_key_combination(self, combo_string):
         """Emulate a sequence of key combinations.
@@ -275,7 +314,7 @@ class KeyboardEmulation:
         # Emulate the key combination by sending key events.
         for keycode, event_type in keycode_events:
             xtest.fake_input(self.display, event_type, keycode)
-        self.display.sync()
+            self.display.sync()
 
     def _send_keycode(self, keycode, modifiers=0):
         """Emulate a key press and release.
@@ -310,8 +349,11 @@ class KeyboardEmulation:
 
         """
         target_window = self.display.get_input_focus().focus
+        # Make sure every event time is different than the previous one, to
+        # avoid an application thinking its an auto-repeat.
+        self.time = (self.time + 1) % 4294967295
         key_event = event_class(detail=keycode,
-                                 time=X.CurrentTime,
+                                 time=self.time,
                                  root=self.display.screen().root,
                                  window=target_window,
                                  child=X.NONE,
@@ -353,7 +395,8 @@ class KeyboardEmulation:
         return (None, None)
 
 
-class XKeyEvent:
+
+class XKeyEvent(object):
     """A class to hold all the information about a key event."""
 
     def __init__(self, keycode, modifiers, keysym):
@@ -379,6 +422,8 @@ class XKeyEvent:
         # Only want printable characters.
         if keysym < 255 or keysym in (XK.XK_Return, XK.XK_Tab):
             self.keystring = XK.keysym_to_string(keysym)
+            if self.keystring == '\x00':
+                self.keystring = None
         else:
             self.keystring = None
 

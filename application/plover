@@ -7,16 +7,7 @@ import sys
 plover_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../")
 sys.path.insert(0, plover_dir)
 
-import plover.gui.main
-import plover.oslayer.processlock
+from plover.main import main
 
-try:
-    # Ensure only one instance of Plover is running at a time.
-    with plover.oslayer.processlock.PloverLock():
-        gui = plover.gui.main.PloverGUI()
-        gui.MainLoop()
-except plover.oslayer.processlock.LockNotAcquiredException:
-    print 'Another instance of Plover is already running.'
-except:
-    print "Unexpected error:", sys.exc_info()[0]
-    raise
+main()
+
